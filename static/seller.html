@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Seller dashboard — Morrow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;700&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="dashboard">
+  <header class="topbar"><nav class="nav-wrap"><a class="brand" href="/"><span class="brand-mark"></span>Morrow</a><div class="nav-links"><a href="/">Marketplace</a><a class="active" href="/seller.html">Seller</a><a href="/admin.html" id="adminLink">Admin</a></div><div class="nav-actions"><button class="btn secondary small" data-logout>Log out</button><span class="avatar" id="avatar">S</span></div></nav></header>
+  <main class="dashboard-layout">
+    <header class="page-head"><div><span class="eyebrow">Seller console</span><h1 class="display">Business pulse</h1></div><button class="btn coral" id="trafficButton">Simulate traffic</button></header>
+    <div class="error-state hidden" id="pageError" role="alert"></div>
+    <section class="metric-row seller-metrics" aria-label="Conversion summary">
+      <div class="metric"><div class="metric-label">Reach</div><div class="metric-value" id="reachMetric">0</div></div>
+      <div class="metric"><div class="metric-label">Clicks</div><div class="metric-value" id="clickMetric">0</div></div>
+      <div class="metric"><div class="metric-label">Conversions</div><div class="metric-value" id="conversionMetric">0</div></div>
+      <div class="metric delta"><div class="metric-label">Conversion rate</div><div class="metric-value" id="rateMetric">0%</div></div>
+    </section>
+    <div class="dashboard-grid">
+      <div>
+        <section class="panel" style="margin-bottom:18px"><div class="panel-head"><h2>Plan &amp; usage</h2><div class="panel-actions"><span class="badge" id="billingStatus">Free</span><button class="btn secondary small" id="changePlan">Change plan</button></div></div><div class="panel-body">
+          <div class="quota" style="padding:0 0 18px">
+            <div class="usage-signature" id="usageSignature" style="--usage-pct:0%">
+              <div class="usage-ring"><strong id="usagePercent">0%</strong><span>used</span></div>
+              <div class="usage-detail"><span class="metric-label">Token allowance</span><div><strong id="quotaUsed">0</strong> <span id="quotaTotal" style="color:var(--slate)">/ 0</span></div><span class="usage-state-line" id="usageState">Healthy</span></div>
+            </div>
+            <div class="segmented-meter" id="quotaMeter" aria-label="Quota usage"></div>
+            <div class="quota-alert" id="quotaAlert"><span class="error-dot" style="background:var(--teal)"></span><span id="quotaMessage">Usage is within plan.</span></div>
+          </div>
+        </section>
+        <section class="panel" style="margin-bottom:18px"><div class="panel-head"><h2>Products</h2><button class="btn small" id="addProduct">Add product</button></div><div class="table-wrap"><table><thead><tr><th>Product</th><th>Price</th><th>Promoted</th><th></th></tr></thead><tbody id="productRows"><tr><td colspan="4" class="loading-row">Loading…</td></tr></tbody></table></div></section>
+        <section class="panel" style="margin-bottom:18px"><div class="panel-head"><h2>Invoices</h2></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>Plan fee</th><th>Overage</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody id="invoiceRows"><tr><td colspan="6">Loading…</td></tr></tbody></table></div></section>
+      </div>
+      <aside>
+        <section class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>API key</h3></div><div class="panel-body"><div class="api-key"><code id="apiKey">Not provided</code><button class="icon-btn" id="copyKey" title="Copy API key" aria-label="Copy API key">⧉</button></div></section>
+        <section class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>Event activity</h3></div><div class="panel-body"><div class="chart-box"><canvas id="lineChart"></canvas></div></div></section>
+        <section class="panel"><div class="panel-head"><h3>Reach / clicks / buys</h3></div><div class="panel-body"><div class="chart-box donut"><canvas id="donutChart"></canvas></div></div></section>
+      </aside>
+    </div>
+  </main>
+  <div class="modal-backdrop hidden" id="planModal" role="dialog" aria-modal="true"><div class="modal"><div class="modal-head"><h2 class="display">Choose a plan</h2><button class="icon-btn" data-close-modal aria-label="Close">×</button></div><div class="modal-body"><div class="demo-banner"><strong>Demo mode — no payment is taken.</strong><br>Any plan can be activated instantly. A sample invoice will be created; changing plans resets usage.</div><div class="plan-list" id="planList"></div></div></div></div>
+  <div class="modal-backdrop hidden" id="productModal" role="dialog" aria-modal="true"><div class="modal"><div class="modal-head"><h2 class="display" id="productModalTitle">Add product</h2><button class="icon-btn" data-close-modal aria-label="Close">×</button></div><div class="modal-body"><form id="productForm" novalidate><div class="field"><label for="productName">Name</label><input id="productName" required></div><div class="field"><label for="productPrice">Monthly price</label><input id="productPrice" type="number" min="0" step="0.01" required></div><div class="field"><label for="productImage">Image URL</label><input id="productImage" type="url" placeholder="https://…"></div><button class="btn" type="submit" id="saveProduct">Save product</button></form></div></div></div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script><script src="/static/app.js"></script>
+  <script>
+    (function(){
+      const M=Morrow;if(!M.requireRole("seller"))return;
+      const user=M.user();document.getElementById("avatar").textContent=(user.name||"S").charAt(0).toUpperCase();
+      if(user.role==="admin")document.getElementById("adminLink").classList.remove("hidden");
+      let products=[],plans=[],editingId=null,lineChart=null,donutChart=null;
+      const moneyInr=value=>new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR"}).format(Number(value)||0);
+      function toast(msg,error){const t=document.getElementById("toast");t.textContent=msg;t.className="toast show"+(error?" error":"");clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.className="toast",2600);}
+      function extract(obj,keys,fallback){for(const k of keys){if(obj&&obj[k]!=null)return obj[k];}return fallback;}
+      async function guarded(label,fn){try{await fn();}catch(e){M.renderError(document.getElementById("pageError"),label+": "+e.message);}}
+      async function loadUsage(){
+        const d=await M.api("/api/usage/live");
+        const billingStatus=String(d.billing_status||"free");
+        const billingBadge=document.getElementById("billingStatus");
+        const currentPlan=d.subscription&&d.subscription.plan?d.subscription.plan.name:"Free";
+        billingBadge.textContent=currentPlan+" · "+billingStatus.replaceAll("_"," ");
+        billingBadge.className="badge"+(["active","free"].includes(billingStatus)?"":" warn");
+        let subscription=d.subscription&&typeof d.subscription==="object"?d.subscription:d;
+        let analytics=null;
+        const liveUsed=extract(subscription,["used","used_tokens","tokens_used","usage"],null);
+        const liveQuota=extract(subscription,["quota","token_quota","limit","total"],null);
+        if(liveUsed==null||liveQuota==null){
+          try{analytics=await M.api("/api/analytics");subscription=analytics.subscription&&typeof analytics.subscription==="object"?analytics.subscription:analytics;}catch(_){}
+        }
+        const used=Number(extract(subscription,["used","used_tokens","tokens_used","usage"],0));
+        const total=Number(extract(subscription,["quota","token_quota","limit","total"],0));
+        const pct=total?Math.max(0,Math.min(100,used/total*100)):0;
+        document.getElementById("quotaUsed").textContent=used.toLocaleString();document.getElementById("quotaTotal").textContent="/ "+total.toLocaleString();
+        document.getElementById("usagePercent").textContent=Math.round(pct)+"%";
+        document.getElementById("usageSignature").style.setProperty("--usage-pct",pct+"%");
+        let state=d.state||d.status||(pct>=100?"blocked":pct>=80?"overage":"healthy");if(subscription.status&&subscription.status!=="active")state=subscription.status==="payment_required"?"blocked":subscription.status;const meter=document.getElementById("quotaMeter");meter.innerHTML="";
+        for(let i=0;i<20;i++){const seg=document.createElement("span");seg.className="segment"+(i<pct/5?(pct>=100?" over":i>=16?" warning":" used"):"");meter.appendChild(seg);}
+        const badge=document.getElementById("usageState"),alert=document.getElementById("quotaAlert"),msg=document.getElementById("quotaMessage");
+        badge.className="badge"+(state==="healthy"?"":" warn");badge.textContent=state==="payment_required"?"Payment required":state==="cancelled"?"Cancelled":state==="past_due"?"Past due":state==="blocked"?"Blocked":state==="overage"?"Overage":"Healthy";
+        alert.className="quota-alert"+(["blocked","payment_required","cancelled","past_due"].includes(state)?" blocked":state==="overage"?" warn":"");        msg.textContent=state==="payment_required"?"Demo billing is active; no payment is required.":state==="cancelled"?"This subscription has ended. Choose a plan to continue.":state==="past_due"?"Demo mode continues without payment collection. Choose a plan to refresh usage.":state==="blocked"?"Requests are blocked at your quota. Upgrade to continue.":state==="overage"?"Overage has begun. Review usage or change plans.":"Usage is within your plan.";
+        const key=extract(d,["api_key","apiKey"],extract(subscription,["api_key","apiKey"],extract(analytics||{},["api_key","apiKey"],"")));if(key){document.getElementById("apiKey").textContent=key;M.apiKey=key;}
+      }
+      async function loadPlans(){
+        const d=await M.api("/api/plans");plans=Array.isArray(d)?d:(d.plans||[]);
+        let activeName="";
+        let subscriptionStatus="";
+        try{
+          const usage=await M.api("/api/usage/live");
+          subscriptionStatus=usage.subscription&&usage.subscription.status?usage.subscription.status:"";
+          if(subscriptionStatus==="active"){
+            activeName=usage.subscription&&usage.subscription.plan?usage.subscription.plan.name:"";
+          }
+        }catch(_){}
+        document.getElementById("planList").innerHTML=plans.map((p,index)=>{
+          const isActive=subscriptionStatus==="active"&&activeName===p.name;
+          const choiceStatus=isActive?' <small>Active</small>':(subscriptionStatus==="payment_required"?' <small>Activate demo</small>':'');
+          return '<button class="plan-option '+(isActive?"active-plan":"")+'" data-id="'+M.escape(p.id)+'"><span class="plan-index">'+String(index+1).padStart(2,"0")+'</span><strong>'+M.escape(p.name)+choiceStatus+'</strong><span>'+M.escape(moneyInr(p.price))+' / month · '+M.escape(p.token_quota||0)+' tokens</span></button>';
+        }).join("")||'<div class="empty-state">No plans available.</div>';
+        document.querySelectorAll(".plan-option").forEach(b=>b.onclick=async()=>{
+          b.disabled=true;
+          try{
+            const result=await M.api("/api/subscribe",{method:"POST",body:JSON.stringify({plan_id:Number(b.dataset.id)})});
+            document.getElementById("planModal").classList.add("hidden");
+            toast(result.invoice_created?result.plan.name+" activated. Demo — no payment taken.":""+result.plan.name+" is already active.",false);
+            await Promise.all([loadUsage(),loadPlans(),loadInvoices()]);
+          }catch(e){toast(e.message,true);}
+          finally{b.disabled=false;}
+        });
+      }
+      async function loadProducts(){
+        const d=await M.api("/api/products");products=Array.isArray(d)?d:(d.products||d.items||[]);
+        document.getElementById("productRows").innerHTML=products.length?products.map(p=>'<tr><td data-label="Product"><strong>'+M.escape(p.name)+'</strong></td><td data-label="Price">'+M.escape(M.money(p.price))+'</td><td data-label="Promoted"><button class="switch '+(p.promoted?'on':'')+'" role="switch" aria-checked="'+!!p.promoted+'" data-promote="'+M.escape(p.id)+'" aria-label="Toggle promotion"></button></td><td data-label="Actions"><span><button class="btn secondary small" data-edit="'+M.escape(p.id)+'">Edit</button> <button class="icon-btn" style="width:34px;height:34px;display:inline-grid" data-delete="'+M.escape(p.id)+'" aria-label="Delete">×</button></span></td></tr>').join(""):'<tr><td colspan="4"><div class="empty-state">No products yet.</div></td></tr>';
+        document.querySelectorAll("[data-promote]").forEach(b=>b.onclick=async()=>{const p=products.find(x=>String(x.id)==b.dataset.promote);b.disabled=true;try{await M.api("/api/products/"+encodeURIComponent(p.id)+"/promote",{method:"PATCH",body:JSON.stringify({promoted:!p.promoted})});p.promoted=!p.promoted;b.classList.toggle("on",p.promoted);b.setAttribute("aria-checked",String(p.promoted));toast("Promotion updated.");}catch(e){toast(e.message,true);}finally{b.disabled=false;}});
+        document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openProduct(products.find(p=>String(p.id)==b.dataset.edit)));
+        document.querySelectorAll("[data-delete]").forEach(b=>b.onclick=async()=>{if(!confirm("Delete this product?"))return;try{await M.api("/api/products/"+encodeURIComponent(b.dataset.delete),{method:"DELETE"});toast("Product deleted.");loadProducts();}catch(e){toast(e.message,true);}});
+      }
+      function openProduct(p){editingId=p?p.id:null;document.getElementById("productModalTitle").textContent=p?"Edit product":"Add product";document.getElementById("productName").value=p?p.name:"";document.getElementById("productPrice").value=p?p.price:"";document.getElementById("productImage").value=p?(p.image_url||""):"";document.getElementById("productModal").classList.remove("hidden");}
+      document.getElementById("addProduct").onclick=()=>openProduct(null);
+      document.querySelectorAll("[data-close-modal]").forEach(b=>b.onclick=()=>b.closest(".modal-backdrop").classList.add("hidden"));
+      document.getElementById("changePlan").onclick=()=>document.getElementById("planModal").classList.remove("hidden");
+      document.getElementById("productForm").addEventListener("submit",async e=>{e.preventDefault();const b=document.getElementById("saveProduct");const payload={name:document.getElementById("productName").value.trim(),price:Number(document.getElementById("productPrice").value),image_url:document.getElementById("productImage").value.trim()};if(!payload.name||!Number.isFinite(payload.price)||payload.price<0)return toast("Enter a valid name and price.",true);M.setBusy(b,true,"Saving…");try{await M.api(editingId?"/api/products/"+encodeURIComponent(editingId):"/api/products",{method:editingId?"PUT":"POST",body:JSON.stringify(payload)});document.getElementById("productModal").classList.add("hidden");toast(editingId?"Product updated.":"Product created.");loadProducts();}catch(x){toast(x.message,true);}finally{M.setBusy(b,false);}});
+      async function loadInvoices(){const d=await M.api("/api/invoices");const rows=Array.isArray(d)?d:(d.invoices||d.items||[]);document.getElementById("invoiceRows").innerHTML=rows.length?rows.map(x=>{
+          const status=String(x.status||"pending");
+          const label=status==="sample"?"Sample":status==="paid"?"Paid":"Pending";
+          return '<tr><td data-label="Period">'+M.escape(x.period||"-")+'</td><td data-label="Plan fee">'+M.escape(moneyInr(x.plan_fee||0))+'</td><td data-label="Overage">'+M.escape(moneyInr(x.overage_amount||0))+'</td><td data-label="Total"><strong>'+M.escape(moneyInr(x.total||0))+'</strong></td><td data-label="Status"><span class="badge '+(status==="paid"?"":"warn")+'">'+M.escape(label)+'</span></td><td data-label="Invoice"><a class="btn secondary small" href="/api/invoices/'+encodeURIComponent(x.id)+'/download" data-download="'+M.escape(x.id)+'">Download .html</a></td></tr>';
+        }).join(""):'<tr><td colspan="6"><div class="empty-state">No invoices available.</div></td></tr>';
+        document.querySelectorAll("[data-download]").forEach(a=>a.onclick=async e=>{
+          e.preventDefault();
+          try{const response=await fetch(a.getAttribute("href"),{headers:{Authorization:"Bearer "+M.token()}});if(!response.ok)throw new Error("Could not download invoice ("+response.status+")");const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="invoice-"+a.dataset.download+".html";document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);}catch(x){toast(x.message,true);}
+        });
+      }
+      async function loadAnalytics(){
+        const d=await M.api("/api/analytics");
+        const totals=d.totals&&typeof d.totals==="object"?d.totals:{};
+        const reach=Number(extract(totals,["reach","impressions","views"],extract(d,["reach","views","visits"],0)));
+        const clicks=Number(extract(totals,["clicks"],extract(d,["clicks"],0)));
+        const buys=Number(extract(totals,["buys","purchases","conversions","sales"],extract(d,["conversions","converted","buys","purchases","sales"],0)));
+        let rate=reach>0?(buys/reach)*100:0;
+        if(!reach){
+          const apiRate=Number(extract(d,["conversion_rate","rate"],0));
+          rate=apiRate<=1?apiRate*100:apiRate;
+        }
+        rate=Math.max(0,Math.min(100,Number.isFinite(rate)?rate:0));
+        document.getElementById("reachMetric").textContent=reach.toLocaleString();
+        document.getElementById("clickMetric").textContent=clicks.toLocaleString();
+        document.getElementById("conversionMetric").textContent=buys.toLocaleString();
+        document.getElementById("rateMetric").textContent=rate.toFixed(1)+"%";
+        if(!window.Chart)return;
+        const daily=Array.isArray(d.events_per_day)?d.events_per_day:[];
+        const labels=daily.map((x,i)=>extract(x,["date","label","period"],String(i+1)));
+        const reachSeries=daily.map(x=>Number(extract(x,["reach","impressions","views"],0)));
+        const clickSeries=daily.map(x=>Number(extract(x,["clicks"],0)));
+        const buySeries=daily.map(x=>Number(extract(x,["buys","purchases"],0)));
+        if(lineChart)lineChart.destroy();
+        lineChart=new Chart(document.getElementById("lineChart"),{type:"line",data:{labels:labels.length?labels:["No data"],datasets:[
+          {label:"Reach",data:reachSeries.length?reachSeries:[0],borderColor:"#17211F",backgroundColor:"rgba(23,33,31,.06)",fill:false,tension:.35,borderWidth:2,pointRadius:3},
+          {label:"Clicks",data:clickSeries.length?clickSeries:[0],borderColor:"#E7664D",backgroundColor:"rgba(231,102,77,.06)",fill:false,tension:.35,borderWidth:2,pointRadius:3},
+          {label:"Buys",data:buySeries.length?buySeries:[0],borderColor:"#2C8B78",backgroundColor:"rgba(44,139,120,.06)",fill:false,tension:.35,borderWidth:2,pointRadius:3}
+        ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{boxWidth:8,color:"#66716E",font:{size:10}}}},scales:{x:{grid:{display:false},ticks:{color:"#66716E",font:{size:10}}},y:{beginAtZero:true,border:{display:false},grid:{color:"#EEEAE1"},ticks:{precision:0,color:"#66716E",font:{size:10}}}}}});
+        if(donutChart)donutChart.destroy();
+        donutChart=new Chart(document.getElementById("donutChart"),{type:"doughnut",data:{labels:["Reach","Clicks","Buys"],datasets:[{data:[reach,clicks,buys],backgroundColor:["#17211F","#E7664D","#2C8B78"],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:"72%",plugins:{legend:{position:"bottom",labels:{boxWidth:8,color:"#66716E",font:{size:10}}}}}});
+      }
+      document.getElementById("copyKey").onclick=async()=>{const text=document.getElementById("apiKey").textContent;if(!text||text==="Not provided")return toast("No API key is available.",true);try{await navigator.clipboard.writeText(text);toast("API key copied.");}catch(_){toast("Copy unavailable in this browser.",true);}};
+      document.getElementById("trafficButton").onclick=async()=>{
+        const b=document.getElementById("trafficButton");
+        if(!products.length)await loadProducts();
+        if(!products.length)return toast("Create a product before simulating traffic.",true);
+        const key=M.apiKey||document.getElementById("apiKey").textContent;
+        if(!key||key==="Not provided")return toast("An API key is required to record usage traffic.",true);
+        M.setBusy(b,true,"Sending…");
+        const types=["impression","click","buy"];let sent=0;
+        try{
+          for(let i=0;i<Math.min(5,Math.max(1,products.length));i++){
+            const p=products[Math.floor(Math.random()*products.length)],type=types[Math.floor(Math.random()*types.length)];
+            const response=await fetch("/api/usage/record",{method:"POST",headers:{"Accept":"application/json","Content-Type":"application/json","x-api-key":key},body:JSON.stringify({product_id:p.id,event_type:type,tokens:1,idempotency_key:"traffic-"+Date.now()+"-"+i+"-"+type})});
+            const data=await response.json().catch(()=>null);
+            if(!response.ok)throw new Error((data&&(data.detail||data.error||data.message))||"Usage record failed ("+response.status+")");
+            sent++;
+          }
+          await Promise.all([loadUsage(),loadAnalytics()]);
+          toast(sent+" usage events sent.");
+        }catch(e){toast(e.message,true);}finally{M.setBusy(b,false,"");}
+      };
+      guarded("Dashboard",async()=>{await Promise.all([loadPlans(),loadProducts(),loadInvoices(),loadUsage(),loadAnalytics()]);});
+      let refreshInProgress=false;
+      window.setInterval(async()=>{
+        if(refreshInProgress)return;
+        refreshInProgress=true;
+        try{await Promise.all([loadUsage(),loadInvoices()]);}
+        catch(error){M.renderError(document.getElementById("pageError"),"Live billing refresh: "+error.message);}
+        finally{refreshInProgress=false;}
+      },3000);
+    })();
+  </script>
+</body>
+</html>

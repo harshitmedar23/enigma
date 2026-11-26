@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Revenue console — Morrow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;700&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="dashboard">
+  <header class="topbar"><nav class="nav-wrap"><a class="brand" href="/"><span class="brand-mark"></span>Morrow</a><div class="nav-links"><a href="/">Marketplace</a><a href="/seller.html">Seller</a><a class="active" href="/admin.html">Admin</a></div><div class="nav-actions"><button class="btn secondary small" data-logout>Log out</button><span class="avatar" id="avatar">A</span></div></nav></header>
+  <main class="dashboard-layout">
+    <header class="page-head"><div><span class="eyebrow">Admin console</span><h1 class="display">Revenue control</h1></div><button class="btn coral" id="closeCycle">Close billing cycle</button></header>
+    <div class="error-state hidden" id="pageError" role="alert"></div>
+    <section class="metric-row" aria-label="Revenue summary">
+      <div class="metric"><div class="metric-label">Gross revenue</div><div class="metric-value" id="grossRevenue">₹0.00</div></div>
+      <div class="metric"><div class="metric-label">Active sellers</div><div class="metric-value" id="activeSellers">0</div></div>
+      <div class="metric delta"><div class="metric-label">Active subscriptions</div><div class="metric-value" id="subscriptions">0</div></div>
+    </section>
+    <section class="panel"><div class="panel-head"><h2>Seller usage</h2><span class="badge" id="cycleStatus">Live</span></div><div class="table-wrap"><table><thead><tr><th>Seller</th><th>Plan</th><th>Usage</th><th>Revenue</th><th>Status</th></tr></thead><tbody id="sellerRows"><tr><td colspan="5">Loading…</td></tr></tbody></table></div></section>
+  </main>
+  <div class="modal-backdrop hidden" id="confirmModal" role="dialog" aria-modal="true"><div class="modal"><div class="modal-head"><h2 class="display">Close usage cycle?</h2><button class="icon-btn" id="closeConfirm" aria-label="Close">×</button></div><div class="modal-body"><p style="color:var(--slate)">This creates usage-overage invoices and resets token counters. Paid plan renewals are charged separately by Razorpay.</p><button class="btn coral" id="confirmClose" style="width:100%">Confirm close cycle</button></div></div></div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/static/app.js"></script>
+  <script>
+    (function(){
+      const M=Morrow;if(!M.requireRole("admin"))return;
+      const user=M.user();document.getElementById("avatar").textContent=(user.name||"A").charAt(0).toUpperCase();
+      function toast(msg,error){const t=document.getElementById("toast");t.textContent=msg;t.className="toast show"+(error?" error":"");clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.className="toast",2600);}
+      function extract(o,k,f){for(const key of k)if(o&&o[key]!=null)return o[key];return f;}
+      function moneyInr(value){return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR"}).format(Number(value)||0);}
+      async function load(){
+        try{
+          const d=await M.api("/api/admin/summary");
+          document.getElementById("grossRevenue").textContent=moneyInr(extract(d,["total_revenue"],0));
+          const sellers=extract(d,["usage_per_seller","sellers","seller_usage","usage","rows"],[]);
+          const rows=Array.isArray(sellers)?sellers:[];
+          document.getElementById("activeSellers").textContent=rows.length.toLocaleString();
+          document.getElementById("subscriptions").textContent=rows.length.toLocaleString();
+          document.getElementById("sellerRows").innerHTML=rows.length?rows.map(s=>{
+            const subscription=s.subscription&&typeof s.subscription==="object"?s.subscription:s;
+            const used=extract(subscription,["used_tokens","tokens_used","usage","used"],0),quota=extract(subscription,["token_quota","quota","limit"],0),state=extract(subscription,["status","state"],extract(s,["status","state"],"healthy"));
+            return '<tr><td><strong>'+M.escape(extract(s,["name","email","seller_name"],"Seller"))+'</strong></td><td>'+M.escape(extract(s,["plan","plan_name"],"—"))+'</td><td><span style="font-weight:800">'+M.escape(Number(used).toLocaleString())+'</span> <span style="color:var(--slate)">/ '+M.escape(Number(quota||0).toLocaleString())+'</span></td><td>'+M.escape(moneyInr(extract(s,["revenue","total_revenue"],0)))+'</td><td><span class="badge '+(state==="healthy"?"":"warn")+'">'+M.escape(state)+'</span></td></tr>';
+          }).join(""):'<tr><td colspan="5"><div class="empty-state">No seller usage has been reported.</div></td></tr>';
+        }catch(e){M.renderError(document.getElementById("pageError"),e.message);document.getElementById("sellerRows").innerHTML='<tr><td colspan="5"><div class="empty-state">Usage unavailable.</div></td></tr>';}
+      }
+      document.getElementById("closeCycle").onclick=()=>document.getElementById("confirmModal").classList.remove("hidden");
+      document.getElementById("closeConfirm").onclick=()=>document.getElementById("confirmModal").classList.add("hidden");
+      document.getElementById("confirmClose").onclick=async()=>{
+        const b=document.getElementById("confirmClose");M.setBusy(b,true,"Closing…");
+        try{await M.api("/api/admin/close-cycle",{method:"POST",body:"{}"});document.getElementById("confirmModal").classList.add("hidden");document.getElementById("cycleStatus").textContent="Closed";toast("Billing cycle closed.");load();}
+        catch(e){toast(e.message,true);}finally{M.setBusy(b,false);}
+      };
+      load();
+    })();
+  </script>
+</body>
+</html>

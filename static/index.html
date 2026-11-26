@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Morrow — Curated tools</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;700&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <nav class="nav-wrap" aria-label="Primary">
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>Morrow</a>
+      <div class="nav-links"><a class="active" href="/">Marketplace</a><a href="/seller.html">Seller</a><a href="/admin.html">Admin</a></div>
+      <div class="nav-actions"><button class="btn secondary small" id="accountButton">Sign in</button><span class="avatar hidden" id="avatar">M</span></div>
+    </nav>
+  </header>
+  <main class="container">
+    <section class="masthead">
+      <div><span class="eyebrow">The good internet, collected</span><h1 class="display">Tools worth<br><em>keeping.</em></h1></div>
+      <div class="masthead-copy"><p>A tightly edited set of subscription products for teams that prefer momentum over complexity.</p><a class="btn coral" href="#recommended">Explore the edit</a></div>
+    </section>
+    <section id="recommended" aria-labelledby="recommendedTitle">
+      <div class="section-heading"><div><span class="eyebrow">Recommended</span><h2 class="display" id="recommendedTitle">This week’s selection</h2></div><p id="productCount">Loading collection…</p></div>
+      <div id="marketplaceError" class="error-state hidden" role="alert"></div>
+      <div class="product-grid" id="productGrid" aria-live="polite"><div class="loading-row" style="grid-column:1/-1"><div class="spinner" aria-label="Loading"></div></div></div>
+    </section>
+  </main>
+  <div class="modal-backdrop hidden" id="productModal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="modalTitle">
+    <div class="modal"><div class="modal-head"><h2 class="display" id="modalTitle">Product</h2><button class="icon-btn" id="closeModal" aria-label="Close">×</button></div><div class="modal-body" id="modalBody"></div></div>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/static/app.js"></script>
+  <script>
+    (function () {
+      const M = Morrow, grid = document.getElementById("productGrid");
+      const account = document.getElementById("accountButton"), avatar = document.getElementById("avatar");
+      let modalTrigger=null,restoreTriggerAfterAction=false,viewRequestPending=false;
+      function toast(message,error){const t=document.getElementById("toast");t.textContent=message;t.className="toast show"+(error?" error":"");clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.className="toast",2600);}
+      const user=M.user();
+      if(user){account.classList.add("hidden");avatar.classList.remove("hidden");avatar.textContent=(user.name||"M").charAt(0).toUpperCase();avatar.title=user.name||"Account";}
+      account.addEventListener("click",()=>location.href="/login.html");
+      avatar.addEventListener("click",()=>location.href=user&&user.role==="admin"?"/admin.html":"/seller.html");
+      function idempotency(){return "ev-"+(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random());}
+      async function sendEvent(product,eventType,button){
+        if(eventType==="click")viewRequestPending=true;
+        M.setBusy(button,true,"Working…");
+        try{
+          await M.api("/api/marketplace/event",{method:"POST",body:JSON.stringify({product_id:product.id,event_type:eventType,idempotency_key:idempotency()})});
+          if(eventType==="click"){openModal(product,button);}
+          if(eventType==="buy"){toast("Purchase recorded successfully.");}
+        }catch(error){toast(error.message,true);}
+        finally{
+          M.setBusy(button,false);
+          if(eventType==="click"){
+            viewRequestPending=false;
+            if(restoreTriggerAfterAction)restoreFocusToViewTrigger();
+          }
+        }
+      }
+      function restoreFocusToViewTrigger(){
+        const trigger=modalTrigger;
+        if(!trigger||!trigger.isConnected)return;
+        if(viewRequestPending||trigger.disabled){restoreTriggerAfterAction=true;return;}
+        restoreTriggerAfterAction=false;
+        try{trigger.focus({preventScroll:true});}catch(_){trigger.focus();}
+        if(document.activeElement!==trigger){
+          requestAnimationFrame(()=>{
+            if(trigger.isConnected&&!trigger.disabled&&document.activeElement!==trigger){
+              try{trigger.focus({preventScroll:true});}catch(_){trigger.focus();}
+            }
+          });
+        }
+      }
+      window.openModal=function(product,trigger){
+        modalTrigger=trigger||document.activeElement;
+        restoreTriggerAfterAction=false;
+        document.getElementById("modalTitle").textContent=product.name;
+        document.getElementById("modalBody").innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px"><img src="'+M.escape(product.image_url||"")+'" alt="" style="width:100%;height:180px;object-fit:cover" onerror="this.style.display=\'none\'"><div><span class="eyebrow">Product</span><h3 class="display" style="font-size:30px;margin:10px 0">'+M.escape(product.name)+'</h3><p>'+M.escape(M.money(product.price)+' · one-time')+'</p><button class="btn coral" id="modalBuy">Buy now</button></div></div>';
+        document.getElementById("productModal").classList.remove("hidden");
+        document.getElementById("productModal").setAttribute("aria-hidden","false");
+        document.getElementById("modalBuy").addEventListener("click",()=>sendEvent(product,"buy",document.getElementById("modalBuy")));
+        document.getElementById("closeModal").focus();
+      };
+      function closeModal(){
+        document.getElementById("productModal").classList.add("hidden");
+        document.getElementById("productModal").setAttribute("aria-hidden","true");
+        restoreTriggerAfterAction=true;
+        restoreFocusToViewTrigger();
+      }
+      document.getElementById("closeModal").addEventListener("click",closeModal);
+      document.getElementById("productModal").addEventListener("click",e=>{if(e.target.id==="productModal")closeModal();});
+      document.addEventListener("keydown",e=>{
+        if(e.key==="Escape"&&!document.getElementById("productModal").classList.contains("hidden"))closeModal();
+        if(e.key==="Tab"&&!document.getElementById("productModal").classList.contains("hidden")){
+          const focusable=[...document.querySelectorAll("#productModal button:not([disabled])")];
+          if(!focusable.length)return;
+          const first=focusable[0],last=focusable[focusable.length-1];
+          if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+          else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+        }
+      });
+      async function load(){
+        try{
+          const data=await M.api("/api/marketplace/recommended");
+          const products=Array.isArray(data)?data:(data.products||data.items||[]);
+          document.getElementById("productCount").textContent=products.length+" "+(products.length===1?"product":"products");
+          if(!products.length){grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div><strong>No recommendations yet</strong><p>Promoted products will appear here.</p></div></div>';return;}
+          grid.innerHTML=products.map((p,i)=>'<article class="product-card">'+
+            '<img class="product-image" src="'+M.escape(p.image_url||"")+'" alt="'+M.escape(p.name)+'" loading="'+(i?'lazy':'eager')+'" onerror="this.style.display=\'none\'">'+
+            '<div class="product-card-body"><div class="product-meta"><div><span class="badge '+(p.promoted?'':'')+'">'+(p.promoted?"Promoted":"Marketplace")+'</span><h3>'+M.escape(p.name)+'</h3></div><span class="product-price">'+M.escape(M.money(p.price))+'</span></div>'+
+            '<div class="product-actions"><button class="btn secondary view-product" data-id="'+M.escape(p.id)+'">View</button><button class="btn coral buy-product" data-id="'+M.escape(p.id)+'">Buy</button></div></div></article>').join("");
+          const map=new Map(products.map(p=>[String(p.id),p]));
+          grid.querySelectorAll(".view-product").forEach(b=>b.addEventListener("click",()=>sendEvent(map.get(b.dataset.id),"click",b)));
+          grid.querySelectorAll(".buy-product").forEach(b=>b.addEventListener("click",()=>sendEvent(map.get(b.dataset.id),"buy",b)));
+        }catch(error){M.renderError(document.getElementById("marketplaceError"),error.message);grid.innerHTML="";}
+      }
+      load();
+    })();
+  </script>
+</body>
+</html>

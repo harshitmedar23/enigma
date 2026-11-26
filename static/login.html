@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sign in — Morrow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;700&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="auth-page">
+    <aside class="auth-aside"><a class="brand" href="/" style="color:white"><span class="brand-mark" style="border-color:white"></span>Morrow</a><div><h1 class="display">Good tools,<br><em>well met.</em></h1><p>Manage subscriptions, see live usage, and keep every billing cycle in one clear view.</p></div></aside>
+    <section class="auth-panel"><div class="auth-card">
+      <span class="eyebrow">Morrow account</span><h1 class="display" id="authTitle" style="font-size:38px;margin:8px 0 0">Welcome back</h1>
+      <div class="auth-tabs" role="tablist"><button class="auth-tab active" id="loginTab" role="tab" aria-selected="true">Sign in</button><button class="auth-tab" id="registerTab" role="tab" aria-selected="false">Create account</button></div>
+      <form id="authForm" novalidate>
+        <div class="field hidden" id="nameField"><label for="name">Full name</label><input id="name" autocomplete="name" placeholder="Alex Morgan"><div class="field-error" id="nameError"></div></div>
+        <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="email" placeholder="you@company.com" required><div class="field-error" id="emailError"></div></div>
+        <div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" placeholder="At least 8 characters" required><div class="field-error" id="passwordError"></div></div>
+        <div class="demo-creds"><strong>Demo credentials</strong><br>Seller: <span id="sellerCred">seller1@demo.com or seller2@demo.com / seller123</span><br>Admin: <span id="adminCred">admin@demo.com / admin123</span></div>
+        <div class="error-state hidden" id="authError" role="alert"></div>
+        <button class="btn coral" id="submitAuth" style="width:100%;margin-top:14px" type="submit">Sign in</button>
+      </form>
+    </div></section>
+  </main>
+  <script src="/static/app.js"></script>
+  <script>
+    (function(){
+      const M=Morrow, loginTab=document.getElementById("loginTab"),registerTab=document.getElementById("registerTab"),form=document.getElementById("authForm");
+      let register=false;
+      function setMode(isRegister){register=isRegister;loginTab.classList.toggle("active",!register);registerTab.classList.toggle("active",register);loginTab.setAttribute("aria-selected",String(!register));registerTab.setAttribute("aria-selected",String(register));document.getElementById("nameField").classList.toggle("hidden",!register);document.getElementById("authTitle").textContent=register?"Create your account":"Welcome back";document.getElementById("submitAuth").textContent=register?"Create account":"Sign in";document.getElementById("password").autocomplete=register?"new-password":"current-password";}
+      loginTab.onclick=()=>setMode(false);registerTab.onclick=()=>setMode(true);
+      function validate(){
+        let ok=true;
+        ["name","email","password"].forEach(id=>document.getElementById(id+"Error").textContent="");
+        if(register&&document.getElementById("name").value.trim().length<2){document.getElementById("nameError").textContent="Enter your full name.";ok=false;}
+        const email=document.getElementById("email").value.trim();
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){document.getElementById("emailError").textContent="Enter a valid email.";ok=false;}
+        if(document.getElementById("password").value.length<8){document.getElementById("passwordError").textContent="Use at least 8 characters.";ok=false;}
+        return ok;
+      }
+      form.addEventListener("submit",async e=>{
+        e.preventDefault();document.getElementById("authError").classList.add("hidden");if(!validate())return;
+        const button=document.getElementById("submitAuth");M.setBusy(button,true,"Signing in…");
+        const payload={email:document.getElementById("email").value.trim(),password:document.getElementById("password").value};
+        if(register)payload.name=document.getElementById("name").value.trim();
+        try{const data=await M.api(register?"/api/auth/register":"/api/auth/login",{method:"POST",body:JSON.stringify(payload)});M.saveAuth(data);location.href=data.user.role==="admin"?"/admin.html":"/seller.html";}
+        catch(error){M.renderError(document.getElementById("authError"),error.message);M.setBusy(button,false);}
+      });
+    })();
+  </script>
+</body>
+</html>
